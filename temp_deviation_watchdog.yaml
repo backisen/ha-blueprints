@@ -197,6 +197,12 @@ blueprint:
 
 mode: restart
 
+trigger_variables:
+  cur_entity: !input current_temp_entity
+  tgt_entity: !input target_temp_entity
+  thr_high: !input threshold_high
+  thr_low: !input threshold_low
+
 variables:
   cur_entity: !input current_temp_entity
   tgt_entity: !input target_temp_entity

@@ -92,6 +92,10 @@ blueprint:
 
 mode: single
 
+trigger_variables:
+  entity_id: !input monitored_entity
+  online_state: !input online_state
+
 variables:
   entity_id: !input monitored_entity
   device_name: !input device_name
