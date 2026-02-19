@@ -45,6 +45,20 @@ Scans all battery sensors and creates notifications when battery levels are low.
 - Critical alerts use iOS critical push sound
 - Persistent notification in WebUI
 
+### unavailable_entity_watchdog.yaml
+
+**Unavailable Entity Watchdog – otillgängliga entiteter**
+
+Scans all entities and reports those with state `unavailable` or `unknown`. Filters by domain and individual entity exclusion lists.
+
+**Features:**
+- Configurable check interval (hours) and run-on-start option
+- Quiet hours to suppress notifications at night
+- Domain exclusion list (comma-separated, sensible defaults for helper domains)
+- Individual entity exclusion list
+- Persistent notification in WebUI (auto-dismissed when all clear)
+- Optional push notifications via configurable notify services
+
 ## Installation
 
 1. Copy the desired `.yaml` file(s) to your Home Assistant `blueprints/automation/custom/` directory.
