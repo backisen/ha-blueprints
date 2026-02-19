@@ -1,0 +1,56 @@
+# Home Assistant Blueprints
+
+A collection of reusable Home Assistant automation blueprints for monitoring and alerting.
+
+## Blueprints
+
+### temp_deviation_watchdog.yaml
+
+**Temperaturavvikelse – larm & påminnelse**
+
+Monitors the difference between a current temperature sensor and a target temperature entity. Alerts on deviation and sends reminders until the temperature is back within tolerance.
+
+**Features:**
+- Separate high/low deviation thresholds (set to 0 to disable a direction)
+- Second critical threshold tier with separate iOS notification level
+- Optional connectivity sensor to prevent false alarms when the device is offline
+- Configurable trigger duration and reminder interval
+- Persistent notification in WebUI
+- Recovery notification when temperature returns to normal
+
+### offline_watchdog.yaml
+
+**Offline Watchdog – enhetsövervakning**
+
+Monitors a binary sensor for connectivity and sends notifications when a device goes offline. Sends reminders at a configurable interval and optionally notifies when the device comes back online.
+
+**Features:**
+- Configurable offline threshold and reminder interval
+- Push notifications with configurable iOS interruption level
+- Persistent notification in WebUI
+- Online recovery notification with offline duration
+- Push notifications use tags to replace (not stack) previous notifications
+
+### low_battery_watchdog.yaml
+
+**Low Battery Watchdog – batteriövervakning**
+
+Scans all battery sensors and creates notifications when battery levels are low. Supports two severity tiers with separate notification targets.
+
+**Features:**
+- Configurable warning and critical battery thresholds
+- Quiet hours to suppress notifications at night
+- Entity exclusion list
+- Separate notify services for warning vs critical level
+- Critical alerts use iOS critical push sound
+- Persistent notification in WebUI
+
+## Installation
+
+1. Copy the desired `.yaml` file(s) to your Home Assistant `blueprints/automation/custom/` directory.
+2. Reload automations or restart Home Assistant.
+3. Create a new automation and select the blueprint from the list.
+
+## License
+
+MIT
