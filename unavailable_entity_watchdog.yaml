@@ -1,0 +1,190 @@
+blueprint:
+  name: Unavailable Entity Watchdog – otillgängliga entiteter
+  description: >
+    Övervakar alla entiteter och rapporterar de som är unavailable/unknown.
+    Ignorerar valda domäner och enskilda entiteter. Skapar persistent_notification
+    i WebUI och skickar valfria push-notiser.
+  domain: automation
+  author: Andreas
+  input:
+    check_hours:
+      name: Kontrollintervall
+      description: Hur ofta entiteter ska kontrolleras (i timmar).
+      default: 1
+      selector:
+        number:
+          min: 1
+          max: 24
+          step: 1
+
+    run_on_start:
+      name: Kör vid HA-start
+      description: Kör en kontroll när Home Assistant startar.
+      default: true
+      selector:
+        boolean:
+
+    quiet_start:
+      name: Tyst period – start
+      description: Inga notiser skickas efter denna tid.
+      default: "23:00:00"
+      selector:
+        time:
+
+    quiet_end:
+      name: Tyst period – slut
+      description: Inga notiser skickas före denna tid.
+      default: "07:00:00"
+      selector:
+        time:
+
+    excluded_domains:
+      name: Exkluderade domäner
+      description: >
+        Komma-separerade domäner som ska ignoreras.
+        T.ex. scene, script, automation, group, input_boolean, input_datetime,
+        input_number, button, persistent_notification.
+      default: "scene, script, automation, group, input_boolean, input_datetime, input_number, button, persistent_notification, input_button, input_text, input_select, number, select"
+      selector:
+        text:
+
+    excluded_entities:
+      name: Exkluderade entiteter
+      description: Enskilda entiteter som ska ignoreras.
+      default: []
+      selector:
+        entity:
+          multiple: true
+
+    preview_limit:
+      name: Max antal i meddelande
+      description: Max antal entiteter som visas i notifikationen.
+      default: 10
+      selector:
+        number:
+          min: 3
+          max: 50
+          step: 1
+
+    enable_persistent:
+      name: Persistent notification
+      description: Visa/rensa persistent_notification i WebUI.
+      default: true
+      selector:
+        boolean:
+
+    notify_service:
+      name: Notify-tjänster (valfri)
+      description: >
+        Komma-separerade notify-tjänster för push-notiser.
+        T.ex. notify.mobile_app_andreas_iphone, notify.mobile_app_charlottes_iphone.
+        Lämna tom om ingen push-notis önskas.
+      default: ""
+      selector:
+        text:
+
+mode: single
+
+variables:
+  excluded_domains_raw: !input excluded_domains
+  excluded_domains: >
+    {{ excluded_domains_raw.split(',') | map('trim') | reject('eq', '') | list }}
+  excluded: !input excluded_entities
+  preview_limit: !input preview_limit
+  enable_persistent: !input enable_persistent
+  run_on_start: !input run_on_start
+  quiet_start: !input quiet_start
+  quiet_end: !input quiet_end
+  check_interval: !input check_hours
+  notify_service: !input notify_service
+  unavailable_entities: >
+    {% set out = namespace(items=[]) %}
+    {% for s in states %}
+      {% set eid = s.entity_id %}
+      {% set domain = eid.split('.')[0] %}
+      {% if domain not in excluded_domains
+            and eid not in excluded
+            and s.state in ['unavailable', 'unknown'] %}
+        {% set out.items = out.items + [eid] %}
+      {% endif %}
+    {% endfor %}
+    {{ out.items | sort }}
+  has_issues: "{{ unavailable_entities | length > 0 }}"
+  msg: >
+    {% set items = unavailable_entities[:preview_limit] %}
+    {% set remaining = unavailable_entities | length - items | length %}
+    {% set line = 'OTILLGÄNGLIGA / OKÄNDA (' ~ unavailable_entities | length ~ '): ' ~ items | join(', ') %}
+    {% if remaining > 0 %}
+      {% set line = line ~ ' (+' ~ remaining ~ ' till)' %}
+    {% endif %}
+    {{ line }}
+
+triggers:
+  - trigger: time_pattern
+    hours: "/1"
+    id: scheduled
+  - trigger: homeassistant
+    event: start
+    id: ha_start
+
+conditions:
+  - condition: template
+    value_template: >
+      {% if trigger.id == 'ha_start' and not run_on_start %}
+        false
+      {% elif trigger.id == 'ha_start' %}
+        {% set qs = today_at(quiet_start) %}
+        {% set qe = today_at(quiet_end) %}
+        {% if qs > qe %}
+          {{ not (now() >= qs or now() < qe) }}
+        {% else %}
+          {{ not (now() >= qs and now() < qe) }}
+        {% endif %}
+      {% else %}
+        {% set check_hours = check_interval %}
+        {% if now().hour % check_hours != 0 %}
+          false
+        {% else %}
+          {% set qs = today_at(quiet_start) %}
+          {% set qe = today_at(quiet_end) %}
+          {% if qs > qe %}
+            {{ not (now() >= qs or now() < qe) }}
+          {% else %}
+            {{ not (now() >= qs and now() < qe) }}
+          {% endif %}
+        {% endif %}
+      {% endif %}
+
+actions:
+  # Persistent notification – skapa eller rensa
+  - if:
+      - condition: template
+        value_template: "{{ has_issues and enable_persistent }}"
+    then:
+      - action: persistent_notification.create
+        data:
+          title: "Otillgängliga entiteter – åtgärd behövs"
+          message: "{{ msg }}"
+          notification_id: unavailable_watchdog
+    else:
+      - if:
+          - condition: template
+            value_template: "{{ not has_issues and enable_persistent }}"
+        then:
+          - action: persistent_notification.dismiss
+            data:
+              notification_id: unavailable_watchdog
+
+  # Push-notis
+  - if:
+      - condition: template
+        value_template: "{{ has_issues and notify_service | length > 0 }}"
+    then:
+      - repeat:
+          for_each: >
+            {{ notify_service.split(',') | map('trim') | reject('eq', '') | list }}
+          sequence:
+            - action: "{{ repeat.item }}"
+              data:
+                title: "Otillgängliga entiteter"
+                message: "{{ msg }}"
