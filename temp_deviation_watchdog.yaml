@@ -1,0 +1,355 @@
+blueprint:
+  name: Temperaturavvikelse – larm & påminnelse
+  description: >
+    Övervakar skillnaden mellan en aktuell temperatursensor och en
+    måltemperatur (sensor, number eller input_number). Larmar vid
+    avvikelse och skickar påminnelser tills temperaturen är tillbaka
+    inom toleransen. För ett fast målvärde, skapa en
+    input_number-helper och välj den som måltemperatur.
+
+
+    Hög- och lågavvikelse konfigureras separat – sätt tröskeln till 0
+    för att inaktivera en riktning.  En valfri andra tröskel (kritisk)
+    ger hårdare notiser vid större avvikelser.
+
+
+    Om en connectivity-sensor (online-entitet) anges krävs att den är
+    "on" innan larm skickas – detta förhindrar falska larm när enheten
+    är offline och temperatursensorn kan visa felaktiga värden.
+
+
+    Återställningsnotis skickas (valfritt) och persistent notification
+    rensas när temperaturen åter är inom toleransen.
+  domain: automation
+  author: Andreas
+  input:
+    current_temp_entity:
+      name: Aktuell temperatur
+      description: Sensor som visar aktuell temperatur.
+      selector:
+        entity:
+          filter:
+            - domain: sensor
+              device_class: temperature
+
+    target_temp_entity:
+      name: Måltemperatur
+      description: >
+        Sensor, number eller input_number som visar önskad/inställd
+        temperatur. För ett fast målvärde, skapa en input_number-helper
+        och välj den här.
+      selector:
+        entity:
+          filter:
+            - domain:
+                - sensor
+                - number
+                - input_number
+
+    device_name:
+      name: Enhetsnamn
+      description: >
+        Visningsnamn i notiser, t.ex. "Spabad" eller "Golvvärme kök".
+      selector:
+        text:
+
+    online_entity:
+      name: Online-entitet (valfri)
+      description: >
+        Valfri connectivity-sensor (binary_sensor). Om angiven krävs
+        att den är "on" innan larm skickas. Detta förhindrar falska
+        larm när enheten är offline och temperatursensorn kan visa
+        felaktiga eller inaktuella värden. Lämna tom för att
+        inaktivera kontrollen.
+      default: ""
+      selector:
+        text:
+
+    threshold_high:
+      name: Tröskel – för hög (°C)
+      description: >
+        Larma när aktuell temperatur överstiger mål med minst detta
+        antal grader. Sätt till 0 för att inte övervaka uppåtavvikelse.
+      default: 0
+      selector:
+        number:
+          min: 0
+          max: 50
+          step: 0.5
+          unit_of_measurement: "°C"
+
+    threshold_low:
+      name: Tröskel – för låg (°C)
+      description: >
+        Larma när aktuell temperatur understiger mål med minst detta
+        antal grader. Sätt till 0 för att inte övervaka nedåtavvikelse.
+      default: 0
+      selector:
+        number:
+          min: 0
+          max: 50
+          step: 0.5
+          unit_of_measurement: "°C"
+
+    critical_threshold_high:
+      name: Kritisk tröskel – för hög (°C)
+      description: >
+        Andra nivån: larma med kritisk nivå när uppåtavvikelsen
+        överstiger detta värde. Sätt till 0 för att inaktivera.
+      default: 0
+      selector:
+        number:
+          min: 0
+          max: 50
+          step: 0.5
+          unit_of_measurement: "°C"
+
+    critical_threshold_low:
+      name: Kritisk tröskel – för låg (°C)
+      description: >
+        Andra nivån: larma med kritisk nivå när nedåtavvikelsen
+        överstiger detta värde. Sätt till 0 för att inaktivera.
+      default: 0
+      selector:
+        number:
+          min: 0
+          max: 50
+          step: 0.5
+          unit_of_measurement: "°C"
+
+    trigger_duration:
+      name: Varaktighet innan larm
+      description: >
+        Antal minuter som avvikelsen måste bestå innan första larmet
+        skickas. Förhindrar falska larm vid tillfälliga avläsningsfel.
+      default: 5
+      selector:
+        number:
+          min: 1
+          max: 30
+          step: 1
+          unit_of_measurement: min
+
+    remind_interval:
+      name: Påminnelseintervall
+      description: Antal minuter mellan påminnelser så länge avvikelsen kvarstår.
+      default: 30
+      selector:
+        number:
+          min: 5
+          max: 1440
+          step: 5
+          unit_of_measurement: min
+
+    notify_services:
+      name: Notify-tjänster
+      description: >
+        Komma-separerade notify-tjänster.
+        T.ex. notify.mobile_app_andreas_iphone, notify.mobile_app_charlottes_iphone.
+      selector:
+        text:
+
+    interruption_level:
+      name: Avbrottsnivå – normal avvikelse (iOS)
+      description: iOS-avbrottsnivå för push-notiser vid normal avvikelse.
+      default: time-sensitive
+      selector:
+        select:
+          options:
+            - label: Passiv
+              value: passive
+            - label: Aktiv
+              value: active
+            - label: Tidskänslig (Time-Sensitive)
+              value: time-sensitive
+            - label: Kritisk
+              value: critical
+
+    critical_interruption_level:
+      name: Avbrottsnivå – kritisk avvikelse (iOS)
+      description: iOS-avbrottsnivå för push-notiser vid kritisk avvikelse.
+      default: critical
+      selector:
+        select:
+          options:
+            - label: Passiv
+              value: passive
+            - label: Aktiv
+              value: active
+            - label: Tidskänslig (Time-Sensitive)
+              value: time-sensitive
+            - label: Kritisk
+              value: critical
+
+    use_persistent_notification:
+      name: Persistent notification (WebUI)
+      description: Visa/uppdatera en persistent notification i WebUI vid avvikelse.
+      default: true
+      selector:
+        boolean:
+
+    notify_on_recovery:
+      name: Återställningsnotis
+      description: Skicka push-notis när temperaturen är tillbaka inom toleransen.
+      default: true
+      selector:
+        boolean:
+
+mode: restart
+
+variables:
+  cur_entity: !input current_temp_entity
+  tgt_entity: !input target_temp_entity
+  device_name: !input device_name
+  online_entity: !input online_entity
+  thr_high: !input threshold_high
+  thr_low: !input threshold_low
+  crit_high: !input critical_threshold_high
+  crit_low: !input critical_threshold_low
+  notify_services: !input notify_services
+  interruption_level: !input interruption_level
+  critical_interruption_level: !input critical_interruption_level
+  use_persistent: !input use_persistent_notification
+  notify_on_recovery: !input notify_on_recovery
+  notif_tag: "temp_dev_{{ cur_entity | replace('.', '_') }}"
+  notif_id: "temp_dev_{{ cur_entity | replace('.', '_') }}"
+  service_list: >
+    {{ notify_services.split(',') | map('trim') | reject('eq', '') | list }}
+  # Helper: check if deviation exists based on enabled thresholds
+  is_deviating: >
+    {% set cur = states(cur_entity) | float(none) %}
+    {% set tgt = states(tgt_entity) | float(none) %}
+    {% if cur is none or tgt is none %}
+      false
+    {% else %}
+      {% set diff = cur - tgt %}
+      {{ (thr_high > 0 and diff >= thr_high)
+         or (thr_low > 0 and diff <= -thr_low) }}
+    {% endif %}
+
+triggers:
+  - trigger: template
+    value_template: >
+      {% set cur = states(cur_entity) | float(none) %}
+      {% set tgt = states(tgt_entity) | float(none) %}
+      {% if cur is none or tgt is none %}
+        false
+      {% else %}
+        {% set diff = cur - tgt %}
+        {{ (thr_high > 0 and diff >= thr_high)
+           or (thr_low > 0 and diff <= -thr_low) }}
+      {% endif %}
+    for:
+      minutes: !input trigger_duration
+
+conditions:
+  - condition: template
+    value_template: >
+      {% if online_entity | length > 0 %}
+        {{ is_state(online_entity, 'on') }}
+      {% else %}
+        true
+      {% endif %}
+
+actions:
+  - variables:
+      alarm_since: "{{ now().strftime('%Y-%m-%d %H:%M') }}"
+
+  # Larm-loop: skicka notis + vänta på återhämtning eller timeout
+  - repeat:
+      while:
+        - condition: template
+          value_template: "{{ is_deviating }}"
+      sequence:
+        - variables:
+            cur: "{{ states(cur_entity) | float(0) }}"
+            tgt: "{{ states(tgt_entity) | float(0) }}"
+            diff: "{{ (cur - tgt) | abs | round(1) }}"
+            direction: >
+              {% if cur > tgt %}för hög{% else %}för låg{% endif %}
+            is_critical: >
+              {% set d = cur - tgt %}
+              {{ (crit_high > 0 and d >= crit_high)
+                 or (crit_low > 0 and d <= -crit_low) }}
+            active_level: >
+              {% if is_critical %}
+                {{ critical_interruption_level }}
+              {% else %}
+                {{ interruption_level }}
+              {% endif %}
+            severity_label: >
+              {% if is_critical %}KRITISK {% endif %}
+
+        # Push-notiser
+        - repeat:
+            for_each: "{{ service_list }}"
+            sequence:
+              - action: "{{ repeat.item }}"
+                data:
+                  title: "{{ severity_label }}{{ device_name }} temperaturavvikelse"
+                  message: >
+                    Temperaturen är {{ diff }}°C {{ direction }}.
+                    Mål: {{ tgt }}°C, Nu: {{ cur }}°C.
+                  data:
+                    tag: "{{ notif_tag }}"
+                    push:
+                      interruption-level: "{{ active_level }}"
+                      sound:
+                        name: default
+                        critical: "{{ 1 if active_level == 'critical' else 0 }}"
+                        volume: 1.0
+
+        # Persistent notification
+        - if:
+            - condition: template
+              value_template: "{{ use_persistent }}"
+          then:
+            - action: persistent_notification.create
+              data:
+                title: "{{ severity_label }}{{ device_name }} temperaturavvikelse"
+                message: >
+                  Temperaturen avviker {{ diff }}°C {{ direction }} från
+                  inställt värde.
+                  Mål: {{ tgt }}°C  Nu: {{ cur }}°C
+                  Avvikelse sedan: {{ alarm_since }}
+                  Senast kontrollerad: {{ now().strftime('%Y-%m-%d %H:%M:%S') }}
+                notification_id: "{{ notif_id }}"
+
+        # Vänta på återhämtning eller timeout för nästa påminnelse
+        - wait_for_trigger:
+            - trigger: template
+              value_template: "{{ not is_deviating }}"
+          timeout:
+            minutes: !input remind_interval
+
+  # === Återhämtning: temperaturen är tillbaka inom toleransen ===
+  - variables:
+      cur_now: "{{ states(cur_entity) | float(0) }}"
+      tgt_now: "{{ states(tgt_entity) | float(0) }}"
+
+  - if:
+      - condition: template
+        value_template: "{{ notify_on_recovery }}"
+    then:
+      - repeat:
+          for_each: "{{ service_list }}"
+          sequence:
+            - action: "{{ repeat.item }}"
+              data:
+                title: "{{ device_name }} temperatur åter normal"
+                message: >
+                  Temperaturen är åter inom toleransen.
+                  Mål: {{ tgt_now }}°C, Nu: {{ cur_now }}°C.
+                data:
+                  tag: "{{ notif_tag }}"
+                  push:
+                    interruption-level: "{{ interruption_level }}"
+
+  # Rensa eller uppdatera persistent notification
+  - if:
+      - condition: template
+        value_template: "{{ use_persistent }}"
+    then:
+      - action: persistent_notification.dismiss
+        data:
+          notification_id: "{{ notif_id }}"
