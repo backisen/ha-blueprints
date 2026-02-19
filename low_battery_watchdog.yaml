@@ -1,0 +1,262 @@
+blueprint:
+  name: Low Battery Watchdog – batteriövervakning
+  description: >
+    Övervakar alla batterisensorer och skapar notifikationer vid låg nivå.
+    Separata tröskelvärden för varning och kritisk nivå, med tyst period,
+    exkluderingslista och valfria push-notiser.
+  domain: automation
+  author: Andreas
+  input:
+    warning_level:
+      name: Varningsnivå
+      description: Tröskelvärde för varning (batterinivå under detta värde).
+      default: 40
+      selector:
+        number:
+          min: 5
+          max: 50
+          step: 5
+          unit_of_measurement: "%"
+
+    critical_level:
+      name: Kritisk nivå
+      description: Tröskelvärde för kritisk nivå (batterinivå under detta värde).
+      default: 10
+      selector:
+        number:
+          min: 1
+          max: 20
+          step: 1
+          unit_of_measurement: "%"
+
+    check_hours:
+      name: Kontrollintervall
+      description: Hur ofta batterinivåer ska kontrolleras (i timmar).
+      default: 6
+      selector:
+        number:
+          min: 1
+          max: 24
+          step: 1
+
+    run_on_start:
+      name: Kör vid HA-start
+      description: Kör en kontroll när Home Assistant startar.
+      default: true
+      selector:
+        boolean:
+
+    quiet_start:
+      name: Tyst period – start
+      description: Inga notiser skickas efter denna tid.
+      default: "23:00:00"
+      selector:
+        time:
+
+    quiet_end:
+      name: Tyst period – slut
+      description: Inga notiser skickas före denna tid.
+      default: "07:00:00"
+      selector:
+        time:
+
+    excluded_entities:
+      name: Exkluderade sensorer
+      description: Batterisensorer som ska ignoreras.
+      default: []
+      selector:
+        entity:
+          domain: sensor
+          device_class: battery
+          multiple: true
+
+    preview_limit:
+      name: Max antal i meddelande
+      description: Max antal entiteter som visas i notifikationen.
+      default: 10
+      selector:
+        number:
+          min: 3
+          max: 30
+          step: 1
+
+    enable_persistent:
+      name: Persistent notification
+      description: Visa/rensa persistent_notification i WebUI.
+      default: true
+      selector:
+        boolean:
+
+    notify_warning_service:
+      name: Notify-tjänster vid varning (valfri)
+      description: >
+        Komma-separerade notify-tjänster som anropas vid varningsnivå.
+        T.ex. notify.mobile_app_andreas_iphone, notify.mobile_app_charlottes_iphone.
+        Lämna tom om ingen push-notis önskas.
+      default: ""
+      selector:
+        text:
+
+    notify_critical_service:
+      name: Notify-tjänster vid kritisk nivå (valfri)
+      description: >
+        Komma-separerade notify-tjänster som anropas vid kritisk nivå – skickas som critical alert.
+        T.ex. notify.mobile_app_andreas_iphone, notify.mobile_app_charlottes_iphone.
+        Lämna tom om ingen push-notis önskas.
+      default: ""
+      selector:
+        text:
+
+mode: single
+
+variables:
+  battery_threshold: !input warning_level
+  critical_threshold: !input critical_level
+  excluded: !input excluded_entities
+  preview_limit: !input preview_limit
+  enable_persistent: !input enable_persistent
+  run_on_start: !input run_on_start
+  quiet_start: !input quiet_start
+  quiet_end: !input quiet_end
+  check_interval: !input check_hours
+  notify_warning_service: !input notify_warning_service
+  notify_critical_service: !input notify_critical_service
+  low_battery_entities: >
+    {% set out = namespace(items=[]) %}
+    {% for s in states.sensor %}
+      {% if s.entity_id not in excluded
+            and state_attr(s.entity_id, 'device_class') == 'battery' %}
+        {% set v = states(s.entity_id) | float(none) %}
+        {% if v is not none and v < battery_threshold %}
+          {% set out.items = out.items + [{'entity': s.entity_id, 'level': v | round(0) | int}] %}
+        {% endif %}
+      {% endif %}
+    {% endfor %}
+    {{ out.items | sort(attribute='level') }}
+  critical_battery_entities: >
+    {{ low_battery_entities | selectattr('level', 'lt', critical_threshold) | list }}
+  has_warning: "{{ low_battery_entities | length > 0 }}"
+  has_critical: "{{ critical_battery_entities | length > 0 }}"
+  has_issues: "{{ has_warning }}"
+  msg: >
+    {% set ns = namespace(lines=[]) %}
+    {% if has_critical %}
+      {% set items = critical_battery_entities[:preview_limit] %}
+      {% set ns2 = namespace(parts=[]) %}
+      {% for item in items %}
+        {% set ns2.parts = ns2.parts + [item.entity ~ ' (' ~ item.level ~ '%)'] %}
+      {% endfor %}
+      {% set line = 'KRITISKT BATTERI (<' ~ critical_threshold ~ '%): ' ~ ns2.parts | join(', ') %}
+      {% set remaining = critical_battery_entities | length - items | length %}
+      {% if remaining > 0 %}
+        {% set line = line ~ ' (+' ~ remaining ~ ' till)' %}
+      {% endif %}
+      {% set ns.lines = ns.lines + [line] %}
+    {% endif %}
+    {% if has_warning %}
+      {% set warning_only = low_battery_entities | rejectattr('level', 'lt', critical_threshold) | list %}
+      {% if warning_only | length > 0 %}
+        {% set items = warning_only[:preview_limit] %}
+        {% set ns3 = namespace(parts=[]) %}
+        {% for item in items %}
+          {% set ns3.parts = ns3.parts + [item.entity ~ ' (' ~ item.level ~ '%)'] %}
+        {% endfor %}
+        {% set line = 'LÅGT BATTERI (<' ~ battery_threshold ~ '%): ' ~ ns3.parts | join(', ') %}
+        {% set remaining = warning_only | length - items | length %}
+        {% if remaining > 0 %}
+          {% set line = line ~ ' (+' ~ remaining ~ ' till)' %}
+        {% endif %}
+        {% set ns.lines = ns.lines + [line] %}
+      {% endif %}
+    {% endif %}
+    {{ ns.lines | join('\n') if ns.lines | length > 0 else 'Inga batteriproblem just nu.' }}
+
+triggers:
+  - trigger: time_pattern
+    hours: "/1"
+    id: scheduled
+  - trigger: homeassistant
+    event: start
+    id: ha_start
+
+conditions:
+  - condition: template
+    value_template: >
+      {% if trigger.id == 'ha_start' and not run_on_start %}
+        false
+      {% elif trigger.id == 'ha_start' %}
+        {% set qs = today_at(quiet_start) %}
+        {% set qe = today_at(quiet_end) %}
+        {% if qs > qe %}
+          {{ not (now() >= qs or now() < qe) }}
+        {% else %}
+          {{ not (now() >= qs and now() < qe) }}
+        {% endif %}
+      {% else %}
+        {% set check_hours = check_interval %}
+        {% if now().hour % check_hours != 0 %}
+          false
+        {% else %}
+          {% set qs = today_at(quiet_start) %}
+          {% set qe = today_at(quiet_end) %}
+          {% if qs > qe %}
+            {{ not (now() >= qs or now() < qe) }}
+          {% else %}
+            {{ not (now() >= qs and now() < qe) }}
+          {% endif %}
+        {% endif %}
+      {% endif %}
+
+actions:
+  # Persistent notification – skapa eller rensa
+  - if:
+      - condition: template
+        value_template: "{{ has_issues and enable_persistent }}"
+    then:
+      - action: persistent_notification.create
+        data:
+          title: "Batteriövervakning – åtgärd behövs"
+          message: "{{ msg }}"
+          notification_id: battery_watchdog
+    else:
+      - if:
+          - condition: template
+            value_template: "{{ not has_issues and enable_persistent }}"
+        then:
+          - action: persistent_notification.dismiss
+            data:
+              notification_id: battery_watchdog
+
+  # Push-notis vid varningsnivå
+  - if:
+      - condition: template
+        value_template: "{{ has_warning and notify_warning_service | length > 0 }}"
+    then:
+      - repeat:
+          for_each: >
+            {{ notify_warning_service.split(',') | map('trim') | reject('eq', '') | list }}
+          sequence:
+            - action: "{{ repeat.item }}"
+              data:
+                title: "Batterivarning"
+                message: "{{ msg }}"
+
+  # Push-notis vid kritisk nivå – critical alert
+  - if:
+      - condition: template
+        value_template: "{{ has_critical and notify_critical_service | length > 0 }}"
+    then:
+      - repeat:
+          for_each: >
+            {{ notify_critical_service.split(',') | map('trim') | reject('eq', '') | list }}
+          sequence:
+            - action: "{{ repeat.item }}"
+              data:
+                title: "Kritiskt batteri!"
+                message: "{{ msg }}"
+                data:
+                  push:
+                    sound:
+                      name: default
+                      critical: 1
+                      volume: 1.0

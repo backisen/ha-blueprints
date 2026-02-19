@@ -1,0 +1,194 @@
+blueprint:
+  name: Offline Watchdog – enhetsövervakning
+  description: >
+    Övervakar en binärsensor och skickar notiser vid offline.
+    Online-notis skickas bara om offline-notis faktiskt skickats.
+    Påminnelser skickas med konfigurerbart intervall.
+    Push-notiser ersätter varandra (tag) istället för att staplas.
+  domain: automation
+  author: Andreas
+  input:
+    monitored_entity:
+      name: Övervakad entitet
+      description: Binärsensor som representerar enhetens anslutningsstatus.
+      selector:
+        entity:
+          filter:
+            - domain: binary_sensor
+
+    device_name:
+      name: Enhetsnamn
+      description: >
+        Visningsnamn i notiser, t.ex. "Värmepump" eller "Spabad".
+      selector:
+        text:
+
+    online_state:
+      name: Online-tillstånd
+      description: Vilket tillstånd som innebär att enheten är online.
+      default: "on"
+      selector:
+        text:
+
+    offline_threshold:
+      name: Offlinetröskel
+      description: Antal minuter enheten måste vara offline innan larm skickas.
+      default: 2
+      selector:
+        number:
+          min: 1
+          max: 30
+          step: 1
+          unit_of_measurement: min
+
+    remind_interval:
+      name: Påminnelseintervall
+      description: Antal minuter mellan påminnelser så länge enheten är offline.
+      default: 30
+      selector:
+        number:
+          min: 5
+          max: 1440
+          step: 5
+          unit_of_measurement: min
+
+    notify_services:
+      name: Notify-tjänster
+      description: >
+        Komma-separerade notify-tjänster.
+        T.ex. notify.mobile_app_andreas_iphone, notify.mobile_app_charlottes_iphone.
+      selector:
+        text:
+
+    interruption_level:
+      name: Avbrottsnivå (iOS)
+      description: iOS-avbrottsnivå för push-notiser.
+      default: time-sensitive
+      selector:
+        select:
+          options:
+            - label: Passiv
+              value: passive
+            - label: Aktiv
+              value: active
+            - label: Tidskänslig (Time-Sensitive)
+              value: time-sensitive
+            - label: Kritisk
+              value: critical
+
+    use_persistent_notification:
+      name: Persistent notification (WebUI)
+      description: Visa/uppdatera en persistent notification i WebUI.
+      default: true
+      selector:
+        boolean:
+
+    notify_on_recovery:
+      name: Online-notis
+      description: Skicka notis när enheten kommer tillbaka online.
+      default: true
+      selector:
+        boolean:
+
+mode: single
+
+variables:
+  entity_id: !input monitored_entity
+  device_name: !input device_name
+  online_state: !input online_state
+  notify_services: !input notify_services
+  interruption_level: !input interruption_level
+  use_persistent: !input use_persistent_notification
+  notify_on_recovery: !input notify_on_recovery
+  notif_tag: "offline_watch_{{ entity_id | replace('.', '_') }}"
+  notif_id: "offline_watch_{{ entity_id | replace('.', '_') }}"
+  service_list: >
+    {{ notify_services.split(',') | map('trim') | reject('eq', '') | list }}
+
+triggers:
+  - trigger: template
+    value_template: "{{ states(entity_id) != online_state }}"
+    for:
+      minutes: !input offline_threshold
+
+actions:
+  - variables:
+      offline_since: "{{ now().strftime('%Y-%m-%d %H:%M') }}"
+      offline_ts: "{{ as_timestamp(now()) }}"
+
+  # Offline-loop: skicka notis + vänta på återhämtning eller timeout
+  - repeat:
+      while:
+        - condition: template
+          value_template: "{{ states(entity_id) != online_state }}"
+      sequence:
+        - repeat:
+            for_each: "{{ service_list }}"
+            sequence:
+              - action: "{{ repeat.item }}"
+                data:
+                  title: "{{ device_name }} offline"
+                  message: "{{ device_name }} är offline sedan {{ offline_since }}."
+                  data:
+                    tag: "{{ notif_tag }}"
+                    push:
+                      interruption-level: "{{ interruption_level }}"
+        - if:
+            - condition: template
+              value_template: "{{ use_persistent }}"
+          then:
+            - action: persistent_notification.create
+              data:
+                title: "{{ device_name }} offline"
+                message: >
+                  {{ device_name }} är offline sedan {{ offline_since }}.
+                  Senast kontrollerad: {{ now().strftime('%Y-%m-%d %H:%M:%S') }}.
+                notification_id: "{{ notif_id }}"
+        - wait_for_trigger:
+            - trigger: template
+              value_template: "{{ states(entity_id) == online_state }}"
+          timeout:
+            minutes: !input remind_interval
+
+  # Återhämtning: entiteten är online igen
+  - variables:
+      mins_offline: "{{ ((as_timestamp(now()) - offline_ts) / 60) | int(0) }}"
+
+  - if:
+      - condition: template
+        value_template: "{{ notify_on_recovery }}"
+    then:
+      - repeat:
+          for_each: "{{ service_list }}"
+          sequence:
+            - action: "{{ repeat.item }}"
+              data:
+                title: "{{ device_name }} online igen"
+                message: >
+                  {{ device_name }} är online igen.
+                  {% if mins_offline > 0 %}Den var offline i {{ mins_offline }} minuter.{% endif %}
+                data:
+                  tag: "{{ notif_tag }}"
+                  push:
+                    interruption-level: "{{ interruption_level }}"
+      - if:
+          - condition: template
+            value_template: "{{ use_persistent }}"
+        then:
+          - action: persistent_notification.create
+            data:
+              title: "{{ device_name }} online igen"
+              message: >
+                {{ device_name }} är online igen.
+                {% if mins_offline > 0 %}Den var offline i {{ mins_offline }} minuter.{% endif %}
+                Tid: {{ now().strftime('%Y-%m-%d %H:%M:%S') }}.
+              notification_id: "{{ notif_id }}"
+
+  # Om online-notis är avstängd men persistent är på: rensa den
+  - if:
+      - condition: template
+        value_template: "{{ not notify_on_recovery and use_persistent }}"
+    then:
+      - action: persistent_notification.dismiss
+        data:
+          notification_id: "{{ notif_id }}"
