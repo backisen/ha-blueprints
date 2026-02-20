@@ -1,6 +1,6 @@
 # Home Assistant Blueprints
 
-A collection of reusable Home Assistant automation blueprints for monitoring and alerting.
+A collection of reusable Home Assistant automation blueprints for monitoring, alerting, and lighting control.
 
 ## Blueprints
 
@@ -58,6 +58,21 @@ Scans all entities and reports those with state `unavailable` or `unknown`. Filt
 - Individual entity exclusion list
 - Persistent notification in WebUI (auto-dismissed when all clear)
 - Optional push notifications via configurable notify services
+
+### motion_light.yaml
+
+**Rörelsestyrd belysning**
+
+Turns on lights when motion is detected and turns them off after a configurable delay. Supports multiple motion sensors and flexible light targeting. Uses `mode: restart` so that new motion resets the off-timer.
+
+**Features:**
+- Multiple motion sensors (select any number)
+- Flexible light target (entities, areas, or devices)
+- Configurable delay before turning off (10–3600 seconds, slider)
+- Optional brightness and separate fade-in / fade-out transition times
+- Optional illuminance sensor condition (don't turn on if already bright enough)
+- Optional sun elevation condition (only activate when dark enough)
+- Optional blocker entity (e.g. an input_boolean to disable during movie night)
 
 ## Installation
 

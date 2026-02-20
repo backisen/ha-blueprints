@@ -1,0 +1,186 @@
+blueprint:
+  name: Rörelsestyrd belysning
+  description: >
+    Tänder belysning vid rörelsedetektering och släcker efter konfigurerbar
+    fördröjning. Stödjer flera rörelsesensorer och flera ljuskällor.
+
+    Funktioner:
+    - Flera rörelsesensorer (valfritt antal)
+    - Flexibelt ljus-target (entiteter, areas, devices)
+    - Konfigurerbar fördröjning innan släckning
+    - Valfri ljusstyrka och övergångstid
+    - Valfritt ljussensor-villkor (tänds inte om det redan är ljust)
+    - Valfritt sol-villkor (tänds bara när solen är under viss elevation)
+    - Valfri blockeringsentitet (t.ex. input_boolean för manuellt läge)
+  domain: automation
+  author: Andreas
+
+  input:
+    motion_sensors:
+      name: Rörelsesensorer
+      description: >
+        Välj en eller flera rörelsesensorer som ska trigga belysningen.
+      selector:
+        entity:
+          filter:
+            - domain: binary_sensor
+              device_class: motion
+          multiple: true
+
+    light_target:
+      name: Ljus att styra
+      description: >
+        Välj ljus, areas eller devices som ska tändas vid rörelse.
+      selector:
+        target:
+          entity:
+            - domain: light
+
+    wait_time:
+      name: Fördröjning innan släckning
+      description: >
+        Antal sekunder som ljuset förblir tänt efter senaste rörelsedetektering.
+      default: 120
+      selector:
+        number:
+          min: 10
+          max: 3600
+          step: 10
+          unit_of_measurement: sekunder
+          mode: slider
+
+    brightness_pct:
+      name: Ljusstyrka (valfri)
+      description: >
+        Ljusstyrka i procent vid tändning. Lämna på 0 för att använda
+        ljusets senaste inställning.
+      default: 0
+      selector:
+        number:
+          min: 0
+          max: 100
+          step: 5
+          unit_of_measurement: "%"
+
+    transition_on:
+      name: Övergångstid vid tändning (valfri)
+      description: Antal sekunder för fade-in. 0 = omedelbart.
+      default: 1
+      selector:
+        number:
+          min: 0
+          max: 30
+          step: 0.5
+          unit_of_measurement: sekunder
+
+    transition_off:
+      name: Övergångstid vid släckning (valfri)
+      description: Antal sekunder för fade-out. 0 = omedelbart.
+      default: 3
+      selector:
+        number:
+          min: 0
+          max: 30
+          step: 0.5
+          unit_of_measurement: sekunder
+
+    illuminance_sensor:
+      name: Ljussensor (valfri)
+      description: >
+        Sensor som mäter ljusnivå. Om vald, tänds ljuset bara när
+        uppmätt värde är under tröskelvärdet nedan. Lämna tom för att
+        alltid tända.
+      default: []
+      selector:
+        entity:
+          filter:
+            - domain: sensor
+              device_class: illuminance
+
+    illuminance_threshold:
+      name: Ljuströskel (lux)
+      description: >
+        Ljuset tänds bara om ljussensorn rapporterar under detta värde.
+        Ignoreras om ingen ljussensor är vald.
+      default: 40
+      selector:
+        number:
+          min: 1
+          max: 1000
+          unit_of_measurement: lux
+
+    sun_elevation:
+      name: Max sol-elevation (valfri)
+      description: >
+        Ljuset tänds bara om solens elevation är under detta värde.
+        Sätts till 90 för att inaktivera sol-villkoret (standard).
+        Typiskt värde: -2 till 5 för skymning/gryning.
+      default: 90
+      selector:
+        number:
+          min: -10
+          max: 90
+          step: 1
+          unit_of_measurement: "°"
+
+    blocker_entity:
+      name: Blockeringsentitet (valfri)
+      description: >
+        Om denna entitet är "on" kommer automationen INTE att tända ljuset.
+        Användbart för t.ex. en input_boolean som indikerar manuellt läge
+        eller filmkväll. Lämna tom för att inte använda.
+      default: []
+      selector:
+        entity:
+          filter:
+            - domain:
+                - input_boolean
+                - binary_sensor
+                - switch
+
+mode: restart
+max_exceeded: silent
+
+variables:
+  blocker: !input blocker_entity
+  lux_sensor: !input illuminance_sensor
+  lux_threshold: !input illuminance_threshold
+  brightness: !input brightness_pct
+
+triggers:
+  - trigger: state
+    entity_id: !input motion_sensors
+    to: "on"
+
+conditions:
+  # Blockeringsentitet (om konfigurerad)
+  - condition: template
+    value_template: >
+      {{ blocker == [] or blocker == '' or not is_state(blocker, 'on') }}
+
+  # Ljussensor-villkor (om konfigurerad)
+  - condition: template
+    value_template: >
+      {{ lux_sensor == [] or lux_sensor == ''
+         or states(lux_sensor) | float(0) < lux_threshold | float(40) }}
+
+  # Sol-elevation-villkor
+  - condition: numeric_state
+    entity_id: sun.sun
+    attribute: elevation
+    below: !input sun_elevation
+
+actions:
+  - action: light.turn_on
+    target: !input light_target
+    data:
+      transition: !input transition_on
+      brightness_pct: "{{ brightness if brightness > 0 else none }}"
+
+  - delay:
+      seconds: !input wait_time
+
+  - action: light.turn_off
+    target: !input light_target
+    data:
+      transition: !input transition_off
