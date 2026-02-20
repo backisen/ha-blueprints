@@ -8,6 +8,8 @@ A collection of reusable Home Assistant automation blueprints for monitoring, al
 
 **Temperaturavvikelse – larm & påminnelse**
 
+[![Import Blueprint](https://my.home-assistant.io/badges/blueprint_import.svg)](https://my.home-assistant.io/redirect/blueprint_import/?blueprint_url=https%3A%2F%2Fgithub.com%2Fbackisen%2Fha-blueprints%2Fblob%2Fmaster%2Ftemp_deviation_watchdog.yaml)
+
 Monitors the difference between a current temperature sensor and a target temperature entity. Alerts on deviation and sends reminders until the temperature is back within tolerance.
 
 **Features:**
@@ -22,6 +24,8 @@ Monitors the difference between a current temperature sensor and a target temper
 
 **Offline Watchdog – enhetsövervakning**
 
+[![Import Blueprint](https://my.home-assistant.io/badges/blueprint_import.svg)](https://my.home-assistant.io/redirect/blueprint_import/?blueprint_url=https%3A%2F%2Fgithub.com%2Fbackisen%2Fha-blueprints%2Fblob%2Fmaster%2Foffline_watchdog.yaml)
+
 Monitors a binary sensor for connectivity and sends notifications when a device goes offline. Sends reminders at a configurable interval and optionally notifies when the device comes back online.
 
 **Features:**
@@ -34,6 +38,8 @@ Monitors a binary sensor for connectivity and sends notifications when a device 
 ### low_battery_watchdog.yaml
 
 **Low Battery Watchdog – batteriövervakning**
+
+[![Import Blueprint](https://my.home-assistant.io/badges/blueprint_import.svg)](https://my.home-assistant.io/redirect/blueprint_import/?blueprint_url=https%3A%2F%2Fgithub.com%2Fbackisen%2Fha-blueprints%2Fblob%2Fmaster%2Flow_battery_watchdog.yaml)
 
 Scans all battery sensors and creates notifications when battery levels are low. Supports two severity tiers with separate notification targets.
 
@@ -49,6 +55,8 @@ Scans all battery sensors and creates notifications when battery levels are low.
 
 **Unavailable Entity Watchdog – otillgängliga entiteter**
 
+[![Import Blueprint](https://my.home-assistant.io/badges/blueprint_import.svg)](https://my.home-assistant.io/redirect/blueprint_import/?blueprint_url=https%3A%2F%2Fgithub.com%2Fbackisen%2Fha-blueprints%2Fblob%2Fmaster%2Funavailable_entity_watchdog.yaml)
+
 Scans all entities and reports those with state `unavailable` or `unknown`. Filters by domain and individual entity exclusion lists.
 
 **Features:**
@@ -63,6 +71,8 @@ Scans all entities and reports those with state `unavailable` or `unknown`. Filt
 
 **Rörelsestyrd belysning**
 
+[![Import Blueprint](https://my.home-assistant.io/badges/blueprint_import.svg)](https://my.home-assistant.io/redirect/blueprint_import/?blueprint_url=https%3A%2F%2Fgithub.com%2Fbackisen%2Fha-blueprints%2Fblob%2Fmaster%2Fmotion_light.yaml)
+
 Turns on lights when motion is detected and turns them off after a configurable delay. Supports multiple motion sensors and flexible light targeting. Uses `mode: restart` so that new motion resets the off-timer.
 
 **Features:**
@@ -75,6 +85,8 @@ Turns on lights when motion is detected and turns them off after a configurable 
 - Optional blocker entity (e.g. an input_boolean to disable during movie night)
 
 ## Installation
+
+Click the **Import Blueprint** button above for the blueprint you want, or manually:
 
 1. Copy the desired `.yaml` file(s) to your Home Assistant `blueprints/automation/custom/` directory.
 2. Reload automations or restart Home Assistant.
