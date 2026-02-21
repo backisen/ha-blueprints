@@ -145,7 +145,7 @@ variables:
   t_morning_on: >
     {{ today_at(t_morning_raw) if t_morning_raw not in ('unknown', 'unavailable', '') else today_at('07:00') }}
   in_forced_off_window: >
-    {{ now() >= t_off or now() < t_morning_on }}
+    {{ now() >= (t_off | as_datetime) or now() < (t_morning_on | as_datetime) }}
   sun_is_dark: >
     {{ state_attr('sun.sun', 'elevation') | float <= elevation_on }}
   sun_is_bright: >
