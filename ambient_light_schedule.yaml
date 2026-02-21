@@ -1,0 +1,332 @@
+blueprint:
+  name: Ambient belysning – sol-elevation + vardag/helg-schema
+  description: >
+    Styr grundbelysning baserat på solens elevation och konfigurerbara
+    morgon/kväll-tider med helg- och helgdags-medvetenhet via workday-sensor.
+    Återställer korrekt tillstånd vid HA-omstart.
+    Stödjer enskilda ljus, flera ljus, areas och valfria scener för tändning/släckning.
+  domain: automation
+  author: Andreas
+  input:
+    light_target:
+      name: Ljus att styra
+      description: >
+        Välj ljus, areas eller devices som ska styras.
+        Du kan välja flera entiteter, hela areas eller enskilda devices.
+        Används när ingen scen är vald.
+      selector:
+        target:
+          entity:
+            domain: light
+
+    scene_on:
+      name: Scen vid tändning (valfri)
+      description: >
+        Om en scen väljs här aktiveras den istället för att bara tända ljusen.
+        Lämna tom för att använda enkel light.turn_on mot valt target.
+      default: ""
+      selector:
+        entity:
+          filter:
+            - domain: scene
+
+    scene_off:
+      name: Scen vid släckning (valfri)
+      description: >
+        Om en scen väljs här aktiveras den istället för att släcka ljusen.
+        Lämna tom för att använda enkel light.turn_off mot valt target.
+      default: ""
+      selector:
+        entity:
+          filter:
+            - domain: scene
+
+    elevation_on:
+      name: Elevation – tänd (sjunkande sol)
+      description: >
+        Lamporna tänds när solens elevation sjunker under detta värde.
+        Förvalt -2° passar Umeå (skymningsljus).
+      default: -2.0
+      selector:
+        number:
+          min: -10.0
+          max: 10.0
+          step: 0.5
+          unit_of_measurement: "°"
+
+    elevation_off:
+      name: Elevation – släck (stigande sol)
+      description: >
+        Lamporna släcks när solens elevation stiger över detta värde.
+        Förvalt 2° passar Umeå (tillräckligt dagsljus).
+      default: 2.0
+      selector:
+        number:
+          min: -10.0
+          max: 10.0
+          step: 0.5
+          unit_of_measurement: "°"
+
+    off_evening_weekday:
+      name: Kväll-av – vardag
+      description: Tid då lamporna släcks på vardagskvällar (gäller kvällen innan vardag).
+      selector:
+        entity:
+          filter:
+            - domain: input_datetime
+
+    off_evening_weekend:
+      name: Kväll-av – helg
+      description: Tid då lamporna släcks på helgkvällar (gäller kvällen innan helg/ledig dag).
+      selector:
+        entity:
+          filter:
+            - domain: input_datetime
+
+    on_morning_weekday:
+      name: Morgon-på – vardag
+      description: Tid då lamporna tänds på vardagsmorgnar (om det fortfarande är mörkt).
+      selector:
+        entity:
+          filter:
+            - domain: input_datetime
+
+    on_morning_weekend:
+      name: Morgon-på – helg
+      description: Tid då lamporna tänds på helg-/ledigdagsmorgnar (om det fortfarande är mörkt).
+      selector:
+        entity:
+          filter:
+            - domain: input_datetime
+
+    workday_today_sensor:
+      name: Workday-sensor (idag)
+      description: Binary sensor som anger om idag är en arbetsdag.
+      default: binary_sensor.workday_sensor
+      selector:
+        entity:
+          filter:
+            - domain: binary_sensor
+
+    workday_tomorrow_sensor:
+      name: Workday-sensor (imorgon)
+      description: Binary sensor som anger om imorgon är en arbetsdag.
+      default: binary_sensor.workday_tomorrow_sensor
+      selector:
+        entity:
+          filter:
+            - domain: binary_sensor
+
+mode: restart
+
+variables:
+  scene_on: !input scene_on
+  scene_off: !input scene_off
+  elevation_on: !input elevation_on
+  elevation_off: !input elevation_off
+  off_evening_weekday: !input off_evening_weekday
+  off_evening_weekend: !input off_evening_weekend
+  on_morning_weekday: !input on_morning_weekday
+  on_morning_weekend: !input on_morning_weekend
+  workday_today: !input workday_today_sensor
+  workday_tomorrow: !input workday_tomorrow_sensor
+  use_scene_on: "{{ scene_on not in ('', none, '{}') and scene_on is string and scene_on.startswith('scene.') }}"
+  use_scene_off: "{{ scene_off not in ('', none, '{}') and scene_off is string and scene_off.startswith('scene.') }}"
+  is_weekend_or_holiday_today: "{{ is_state(workday_today, 'off') }}"
+  is_weekend_or_holiday_tomorrow: "{{ is_state(workday_tomorrow, 'off') }}"
+  t_off_raw: >
+    {{ states(off_evening_weekend
+       if is_weekend_or_holiday_tomorrow else off_evening_weekday) }}
+  t_morning_raw: >
+    {{ states(on_morning_weekend
+       if is_weekend_or_holiday_today else on_morning_weekday) }}
+  t_off: >
+    {{ today_at(t_off_raw) if t_off_raw not in ('unknown', 'unavailable', '') else today_at('23:00') }}
+  t_morning_on: >
+    {{ today_at(t_morning_raw) if t_morning_raw not in ('unknown', 'unavailable', '') else today_at('07:00') }}
+  in_forced_off_window: >
+    {{ now() >= t_off or now() < t_morning_on }}
+  sun_is_dark: >
+    {{ state_attr('sun.sun', 'elevation') | float <= elevation_on }}
+  sun_is_bright: >
+    {{ state_attr('sun.sun', 'elevation') | float >= elevation_off }}
+  should_be_on: >
+    {{ sun_is_dark and not in_forced_off_window }}
+
+triggers:
+  - trigger: numeric_state
+    entity_id: sun.sun
+    attribute: elevation
+    below: !input elevation_on
+    id: sun_dark
+  - trigger: numeric_state
+    entity_id: sun.sun
+    attribute: elevation
+    above: !input elevation_off
+    id: sun_bright
+  - trigger: time
+    at: !input off_evening_weekday
+    id: off_weekday
+  - trigger: time
+    at: !input off_evening_weekend
+    id: off_weekend
+  - trigger: time
+    at: !input on_morning_weekday
+    id: on_morning_weekday
+  - trigger: time
+    at: !input on_morning_weekend
+    id: on_morning_weekend
+  - trigger: homeassistant
+    event: start
+    id: ha_start
+
+actions:
+  - choose:
+      # ── HA-omstart: evaluera aktuellt tillstånd ──
+      - conditions:
+          - condition: trigger
+            id: ha_start
+        sequence:
+          - delay:
+              seconds: 30
+          - if:
+              - condition: template
+                value_template: "{{ should_be_on }}"
+            then:
+              - if:
+                  - condition: template
+                    value_template: "{{ use_scene_on }}"
+                then:
+                  - action: scene.turn_on
+                    target:
+                      entity_id: "{{ scene_on }}"
+                else:
+                  - action: light.turn_on
+                    target: !input light_target
+            else:
+              - if:
+                  - condition: template
+                    value_template: "{{ use_scene_off }}"
+                then:
+                  - action: scene.turn_on
+                    target:
+                      entity_id: "{{ scene_off }}"
+                else:
+                  - action: light.turn_off
+                    target: !input light_target
+
+      # ── Kväll-av: vardag (kvällen innan en arbetsdag) ──
+      - conditions:
+          - condition: trigger
+            id: off_weekday
+          - condition: template
+            value_template: "{{ not is_weekend_or_holiday_tomorrow }}"
+        sequence:
+          - if:
+              - condition: template
+                value_template: "{{ use_scene_off }}"
+            then:
+              - action: scene.turn_on
+                target:
+                  entity_id: "{{ scene_off }}"
+            else:
+              - action: light.turn_off
+                target: !input light_target
+
+      # ── Kväll-av: helg (kvällen innan helg/ledig dag) ──
+      - conditions:
+          - condition: trigger
+            id: off_weekend
+          - condition: template
+            value_template: "{{ is_weekend_or_holiday_tomorrow }}"
+        sequence:
+          - if:
+              - condition: template
+                value_template: "{{ use_scene_off }}"
+            then:
+              - action: scene.turn_on
+                target:
+                  entity_id: "{{ scene_off }}"
+            else:
+              - action: light.turn_off
+                target: !input light_target
+
+      # ── Sol sjunker under elevation-tröskel → tänd ──
+      - conditions:
+          - condition: trigger
+            id: sun_dark
+          - condition: template
+            value_template: "{{ not in_forced_off_window }}"
+        sequence:
+          - if:
+              - condition: template
+                value_template: "{{ use_scene_on }}"
+            then:
+              - action: scene.turn_on
+                target:
+                  entity_id: "{{ scene_on }}"
+            else:
+              - action: light.turn_on
+                target: !input light_target
+
+      # ── Sol stiger över elevation-tröskel → släck ──
+      - conditions:
+          - condition: trigger
+            id: sun_bright
+          - condition: template
+            value_template: "{{ not in_forced_off_window }}"
+        sequence:
+          - if:
+              - condition: template
+                value_template: "{{ use_scene_off }}"
+            then:
+              - action: scene.turn_on
+                target:
+                  entity_id: "{{ scene_off }}"
+            else:
+              - action: light.turn_off
+                target: !input light_target
+
+      # ── Morgon-på: vardag ──
+      - conditions:
+          - condition: trigger
+            id: on_morning_weekday
+          - condition: template
+            value_template: "{{ not is_weekend_or_holiday_today }}"
+          - condition: template
+            value_template: "{{ not in_forced_off_window }}"
+          - condition: template
+            value_template: "{{ sun_is_dark }}"
+        sequence:
+          - if:
+              - condition: template
+                value_template: "{{ use_scene_on }}"
+            then:
+              - action: scene.turn_on
+                target:
+                  entity_id: "{{ scene_on }}"
+            else:
+              - action: light.turn_on
+                target: !input light_target
+
+      # ── Morgon-på: helg ──
+      - conditions:
+          - condition: trigger
+            id: on_morning_weekend
+          - condition: template
+            value_template: "{{ is_weekend_or_holiday_today }}"
+          - condition: template
+            value_template: "{{ not in_forced_off_window }}"
+          - condition: template
+            value_template: "{{ sun_is_dark }}"
+        sequence:
+          - if:
+              - condition: template
+                value_template: "{{ use_scene_on }}"
+            then:
+              - action: scene.turn_on
+                target:
+                  entity_id: "{{ scene_on }}"
+            else:
+              - action: light.turn_on
+                target: !input light_target
