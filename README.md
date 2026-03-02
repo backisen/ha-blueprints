@@ -67,6 +67,91 @@ Scans all entities and reports those with state `unavailable` or `unknown`. Filt
 - Persistent notification in WebUI (auto-dismissed when all clear)
 - Optional push notifications via configurable notify services
 
+### ambient_light_schedule.yaml
+
+**Ambient belysning – sol-elevation + vardag/helg-schema**
+
+[![Import Blueprint](https://my.home-assistant.io/badges/blueprint_import.svg)](https://my.home-assistant.io/redirect/blueprint_import/?blueprint_url=https%3A%2F%2Fgithub.com%2Fbackisen%2Fha-blueprints%2Fblob%2Fmaster%2Fambient_light_schedule.yaml)
+
+Controls ambient lighting based on sun elevation and configurable morning/evening schedules with weekday/weekend awareness via the workday sensor. Correctly restores state on HA restart.
+
+**Features:**
+- Sun elevation triggers (configurable thresholds for on/off)
+- Separate weekday and weekend/holiday schedules via `input_datetime` helpers
+- Workday sensor awareness (adapts to holidays)
+- Optional scene support for turn-on and turn-off
+- Optional per-light brightness map via a `variable` sensor
+- Correct state restoration on HA restart (with 30 s startup delay)
+- Flexible light targeting (entities, areas, or devices)
+
+#### Per-light brightness map (optional)
+
+Instead of turning on all lights at their last-used brightness, you can configure a brightness map that ensures each light always turns on at a specific brightness level. This prevents manually adjusted dimmers from "sticking" at the wrong brightness the next evening.
+
+**Prerequisites:** Install the [hass-variables](https://github.com/enkama/hass-variables) integration via HACS.
+
+**1. Create the variable sensor**
+
+In Home Assistant, go to **Settings > Devices & Services > Add Integration** and search for **Variables+History**. Choose **Add Sensor** and configure:
+
+| Field | Value |
+|---|---|
+| Variable ID | `ambient_brightness_map` |
+| Name | Ambient brightness-karta |
+| Icon | `mdi:brightness-percent` |
+| Restore | Yes |
+| Exclude from recorder | Yes (recommended) |
+
+On the second page, set the initial value to `active` and add your lights as attributes:
+
+```json
+{
+  "light.kitchen_island_strip": 100,
+  "light.living_room_downlight": 80,
+  "light.bedroom_window": 60
+}
+```
+
+Each key is a light entity ID and each value is brightness in percent (0–100).
+
+**2. Reference the sensor in your automation**
+
+When creating an automation from this blueprint, select your variable sensor in the **Brightness-karta** input field:
+
+```yaml
+use_blueprint:
+  path: custom/ambient_light_schedule.yaml
+  input:
+    light_target:
+      entity_id: light.my_ambient_group
+    brightness_map: sensor.ambient_brightness_map
+    # ... other inputs
+```
+
+**3. Update brightness values**
+
+Call the `variable.update_sensor` service to change brightness for individual lights. Attributes are merged, so you only need to specify the lights you want to change:
+
+```yaml
+action: variable.update_sensor
+target:
+  entity_id: sensor.ambient_brightness_map
+data:
+  attributes:
+    light.kitchen_island_strip: 60
+    light.living_room_downlight: 40
+```
+
+The new values take effect the next time the automation turns on the lights.
+
+**Behavior:**
+- Scene input takes priority over brightness map (if both are set, the scene is used)
+- If a light is not found in the brightness map, it defaults to 100%
+- If the brightness map sensor is unavailable, the blueprint falls back to simple `light.turn_on`
+- The brightness map input is optional — without it, the blueprint behaves exactly as before
+
+---
+
 ### motion_light.yaml
 
 **Rörelsestyrd belysning**
