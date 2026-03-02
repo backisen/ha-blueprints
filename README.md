@@ -148,29 +148,41 @@ The new values take effect the next time the automation turns on the lights.
 
 **4. Snapshot current brightness (optional script)**
 
-Instead of manually entering brightness values, you can create a script that reads the current brightness from all lights in the map and saves them automatically. Adjust your lights to the desired levels, then run the script:
+Instead of manually entering brightness values, you can create a script that automatically discovers all light groups ending in `_ambient`, reads each member's current brightness, and saves it to the map. New lights added to a group are picked up automatically.
+
+Adjust your lights to the desired levels, then run the script:
 
 ```yaml
 # scripts.yaml
 ambient_brightness_snapshot:
   alias: "Ambient – Spara aktuell brightness"
   description: >
-    Reads current brightness from all lights in the brightness map
-    and updates the variable sensor. Lights that are off or lack
-    a brightness attribute keep their existing value.
+    Discovers all *_ambient light groups, reads current brightness
+    from their members, and updates the variable sensor. Lights
+    that are off or lack a brightness attribute keep their existing
+    value. New lights added to a group are included automatically.
   icon: mdi:content-save-outline
   sequence:
     - variables:
         lights_to_update: >
-          {% set ns = namespace(items=[]) %}
-          {% for key, val in states.sensor.ambient_brightness_map.attributes.items() %}
-            {% if key not in ('icon', 'friendly_name') %}
-              {% set entity = 'light.' ~ key %}
-              {% set br = state_attr(entity, 'brightness') %}
-              {% if br is not none %}
-                {% set pct = (br / 255 * 100) | round | int %}
-                {% set ns.items = ns.items + [{'key': key, 'pct': pct}] %}
-              {% endif %}
+          {% set ns = namespace(items=[], seen=[]) %}
+          {% set ambient_groups = states.light
+             | selectattr('entity_id', 'search', '_ambient$')
+             | map(attribute='entity_id') | list %}
+          {% for group in ambient_groups %}
+            {% set members = state_attr(group, 'entity_id') %}
+            {% if members %}
+              {% for member in members %}
+                {% if member not in ns.seen %}
+                  {% set ns.seen = ns.seen + [member] %}
+                  {% set key = member | replace('light.', '', 1) %}
+                  {% set br = state_attr(member, 'brightness') %}
+                  {% if br is not none %}
+                    {% set pct = (br / 255 * 100) | round | int %}
+                    {% set ns.items = ns.items + [{'key': key, 'pct': pct}] %}
+                  {% endif %}
+                {% endif %}
+              {% endfor %}
             {% endif %}
           {% endfor %}
           {{ ns.items }}
