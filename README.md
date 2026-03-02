@@ -102,17 +102,19 @@ In Home Assistant, go to **Settings > Devices & Services > Add Integration** and
 | Restore | Yes |
 | Exclude from recorder | Yes (recommended) |
 
-On the second page, set the initial value to `active` and add your lights as attributes:
+On the second page, set the initial value to `active` and add your lights as attributes.
+
+**Important:** Attribute keys use the entity ID **without** the `light.` prefix (HA interprets dots in attribute keys as nesting, so we strip the domain prefix):
 
 ```json
 {
-  "light.kitchen_island_strip": 100,
-  "light.living_room_downlight": 80,
-  "light.bedroom_window": 60
+  "kitchen_island_strip": 100,
+  "living_room_downlight": 80,
+  "bedroom_window": 60
 }
 ```
 
-Each key is a light entity ID and each value is brightness in percent (0–100).
+Each key is the light entity ID minus the `light.` prefix, and each value is brightness in percent (0–100).
 
 **2. Reference the sensor in your automation**
 
@@ -138,11 +140,54 @@ target:
   entity_id: sensor.ambient_brightness_map
 data:
   attributes:
-    light.kitchen_island_strip: 60
-    light.living_room_downlight: 40
+    kitchen_island_strip: 60
+    living_room_downlight: 40
 ```
 
 The new values take effect the next time the automation turns on the lights.
+
+**4. Snapshot current brightness (optional script)**
+
+Instead of manually entering brightness values, you can create a script that reads the current brightness from all lights in the map and saves them automatically. Adjust your lights to the desired levels, then run the script:
+
+```yaml
+# scripts.yaml
+ambient_brightness_snapshot:
+  alias: "Ambient – Spara aktuell brightness"
+  description: >
+    Reads current brightness from all lights in the brightness map
+    and updates the variable sensor. Lights that are off or lack
+    a brightness attribute keep their existing value.
+  icon: mdi:content-save-outline
+  sequence:
+    - variables:
+        lights_to_update: >
+          {% set ns = namespace(items=[]) %}
+          {% for key, val in states.sensor.ambient_brightness_map.attributes.items() %}
+            {% if key not in ('icon', 'friendly_name') %}
+              {% set entity = 'light.' ~ key %}
+              {% set br = state_attr(entity, 'brightness') %}
+              {% if br is not none %}
+                {% set pct = (br / 255 * 100) | round | int %}
+                {% set ns.items = ns.items + [{'key': key, 'pct': pct}] %}
+              {% endif %}
+            {% endif %}
+          {% endfor %}
+          {{ ns.items }}
+    - condition: template
+      value_template: "{{ lights_to_update | length > 0 }}"
+    - repeat:
+        for_each: "{{ lights_to_update }}"
+        sequence:
+          - action: variable.update_sensor
+            target:
+              entity_id: sensor.ambient_brightness_map
+            data:
+              attributes:
+                "{{ repeat.item.key }}": "{{ repeat.item.pct }}"
+```
+
+Call via **Developer Tools > Services** → `script.ambient_brightness_snapshot`, or add a button to your dashboard.
 
 **Behavior:**
 - Scene input takes priority over brightness map (if both are set, the scene is used)

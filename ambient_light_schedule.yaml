@@ -273,7 +273,7 @@ actions:
                             entity_id: "{{ repeat.item }}"
                           data:
                             brightness_pct: >
-                              {{ state_attr(brightness_map_entity, repeat.item)
+                              {{ state_attr(brightness_map_entity, repeat.item | replace('light.', '', 1))
                                  | default(100) | int }}
                 else:
                   - action: light.turn_on
